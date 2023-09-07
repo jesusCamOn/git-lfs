@@ -1,0 +1,77 @@
+name: Deploy SPA in S3
+
+on:
+  push:
+    branches:
+      - dev
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout del código fuente
+        uses: actions/checkout@v3
+
+      - name: Installing Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: "20"
+
+      - name: Instalar dependencias
+        run: npm i
+
+      - name: Construir la aplicación
+        run: npm run build
+
+      - name: Archivar artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: built-files
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Leer el nombre del proyecto desde package.json
+        run: |
+          PROJECT_NAME=$(node -p "require('./package.json').name")
+          echo "PROJECT_NAME=${PROJECT_NAME}" >> $GITHUB_ENV
+
+      - name: Obtener artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: built-files
+          path: dist
+
+      - name: Configurar variable de entorno AWS_S3_BUCKET
+        run: echo "AWS_S3_BUCKET=ar.camonapp.com" >> $GITHUB_ENV
+      
+      - name: Configurar variable de entorno AWS_S3_DISTRIBUTION
+        run: echo "AWS_S3_DISTRIBUTION=E247M6NDWCAPA5" >> $GITHUB_ENV
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-west-1
+
+      - name: Publicar carpeta en S3
+        run: |
+          if [[ ${{ github.ref }} == 'refs/heads/main' ]]; then
+            AWS_S3_DEST="${{ env.PROJECT_NAME }}"
+          elif [[ ${{ github.ref }} == 'refs/heads/dev' ]]; then
+            AWS_S3_DEST="${{ env.PROJECT_NAME }}_test"
+          else 
+            echo "No se encontró un valor para AWS_S3_BUCKET para la rama actual"
+            exit 1
+          fi
+
+          echo "Bucket destino: s3://$AWS_S3_BUCKET/$AWS_S3_DEST"
+          aws s3 sync ./dist/ s3://$AWS_S3_BUCKET/$AWS_S3_DEST/
+          aws cloudfront create-invalidation --distribution-id "$AWS_S3_DISTRIBUTION" --paths "/$AWS_S3_DEST/*"
