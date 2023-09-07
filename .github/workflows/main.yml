@@ -21,6 +21,14 @@ jobs:
       - name: Instalar dependencias
         run: npm i
 
+      - name: Configure Git LFS
+        run: |
+          git lfs install
+          git config lfs.https://github.com/jesusCamOn/git-lfs.git/info/lfs.locksverify false
+      
+      - name: Fetch Git LFS files
+        run: git lfs fetch
+
       - name: Construir la aplicación
         run: npm run build
 
